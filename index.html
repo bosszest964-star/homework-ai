@@ -151,6 +151,27 @@ dialog{border:1px solid var(--line);border-radius:16px;color:var(--ink);backgrou
 }
 @media(max-width:360px){.preview-tools .chip{display:none}.workspace-foot{flex-wrap:wrap}.intro .btn .icon{display:none}}
 @media(prefers-reduced-motion:no-preference){.btn,.tab,.answer-item,.upload-zone{transition:background-color .15s,border-color .15s}}
+.api-guide{margin-bottom:12px;padding:11px 12px;border:1px solid var(--accent-line);border-radius:11px;background:#f8f4ff}
+.api-guide h3{font-size:.92rem;margin-bottom:4px}
+.api-guide ol{margin:7px 0 9px;padding-inline-start:1.5em;color:var(--ink);font-size:.83rem}
+.api-guide li+li{margin-top:4px}
+.api-guide .field{margin:8px 0}
+.guide-links,.connection-actions{display:flex;gap:7px;flex-wrap:wrap}
+.guide-links .btn{text-decoration:none}
+.home-api-guide{margin:12px 0 0}
+.home-api-guide .btn{margin-top:4px}
+.connection-result{padding:8px 10px;margin:8px 0;border-radius:8px;font-size:.85rem;background:var(--lavender);color:var(--accent-dark)}
+.connection-result[data-state="success"]{background:#e9f7ed;color:#266643}
+.connection-result[data-state="error"]{background:#fff0f3;color:#962747}
+.writing-bar{display:grid;grid-template-columns:minmax(200px,1fr) minmax(170px,1fr);gap:5px 12px;align-items:center;padding:9px 13px;background:#fcfbfe;border-bottom:1px solid var(--line)}
+.writing-bar .field{margin:0}
+.writing-bar .field select{padding-top:5px;padding-bottom:5px}
+.writing-bar .chip{white-space:normal;width:fit-content}
+.studio-card .writing-bar{border:1px solid var(--line);border-radius:10px;margin:9px 0}
+.ipad-tip{margin:9px 0 0}
+.drawing,.drawing canvas,.hit-box,.paper[data-block-touch="true"]{touch-action:none}
+.drawing,.drawing canvas,.paper,.hit-box{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+@media(max-width:600px){.writing-bar{grid-template-columns:minmax(0,1fr)}}
 </style>
 </head>
 <body>
@@ -198,6 +219,12 @@ dialog{border:1px solid var(--line);border-radius:16px;color:var(--ink);backgrou
 <button class="btn btn-primary scan" id="scan-btn"><svg class="icon" aria-hidden="true"><use href="#i-spark"></use></svg><span>สแกนใบงานและเขียนคำตอบด้วยลายมือฉัน</span></button>
 <p class="api-hint"><svg class="icon" aria-hidden="true"><use href="#i-lock"></use></svg><span id="api-status">ตั้งค่า API Key เพื่อเริ่มสแกน</span></p>
 <p id="job-status" class="status" role="status" hidden></p>
+<details class="api-guide home-api-guide" id="home-api-guide" open hidden>
+<summary>ขอ API Key ใน 4 ขั้นตอน</summary>
+<label class="field" for="home-guide-provider">เลือกผู้ให้บริการ<select id="home-guide-provider"><option value="gemini">Gemini (แนะนำ)</option><option value="openai">OpenAI</option></select></label>
+<div id="home-guide-content"></div>
+<button type="button" class="btn btn-soft" id="home-guide-settings">เปิดหน้าตั้งค่าสมอง AI</button>
+</details>
 </section>
 <section class="card review" aria-labelledby="review-title">
 <div class="section-heading"><h2 class="section-title" id="review-title"><svg class="icon" aria-hidden="true"><use href="#i-list"></use></svg>ตรวจและแก้คำตอบ AI</h2><span id="answer-count" class="chip">0 ข้อ</span></div>
@@ -211,6 +238,10 @@ dialog{border:1px solid var(--line);border-radius:16px;color:var(--ink);backgrou
 <div class="pager"><button class="btn btn-icon" id="prev-page" aria-label="หน้าก่อนหน้า"><svg class="icon" aria-hidden="true"><use href="#i-left"></use></svg></button><span id="page-counter"></span><button class="btn btn-icon" id="next-page" aria-label="หน้าถัดไป"><svg class="icon" aria-hidden="true"><use href="#i-right"></use></svg></button></div>
 <span class="chip" id="preview-mode">โหมดตัวอย่าง</span>
 <div class="zoom-group"><button class="btn btn-icon" id="zoom-out" aria-label="ย่อมุมมอง"><svg class="icon" aria-hidden="true"><use href="#i-minus"></use></svg></button><span id="zoom-value">100%</span><button class="btn btn-icon" id="zoom-in" aria-label="ขยายมุมมอง"><svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg></button></div>
+</div>
+<div class="writing-bar">
+<label class="field" for="worksheet-writing-mode">โหมดการเขียน<select id="worksheet-writing-mode"></select></label>
+<p class="chip chip-neutral" id="worksheet-pen-status" role="status"></p>
 </div>
 <div class="stage" id="stage"><div class="paper" id="paper"><canvas id="worksheet-canvas" aria-label="ภาพใบงานพร้อมคำตอบ"></canvas><div id="overlay" class="overlay"></div></div></div>
 <div class="paper-controls">
@@ -242,10 +273,15 @@ dialog{border:1px solid var(--line);border-radius:16px;color:var(--ink);backgrou
 <div class="row-between studio-top"><h2 class="section-title">กำลังคัด <strong id="glyph-current">ก</strong></h2><span id="save-status" class="chip chip-neutral" role="status">พร้อมเขียน</span></div>
 <div id="variants" class="variants" aria-label="แบบลายมือ"></div>
 <p class="small" id="glyph-hint"></p>
+<div class="writing-bar">
+<label class="field" for="studio-writing-mode">โหมดการเขียน<select id="studio-writing-mode"></select></label>
+<p class="chip chip-neutral" id="studio-pen-status" role="status"></p>
+</div>
 <div class="drawing">
 <canvas id="drawing-canvas" width="720" height="390" aria-label="กระดานคัดลายมือ 4 โซน"></canvas>
 <span class="zone-label" style="top:4%">วรรณยุกต์</span><span class="zone-label" style="top:23%">สระบน</span><span class="zone-label" style="top:44%">พยัญชนะหลัก</span><span class="zone-label" style="top:81%">สระล่าง</span>
 </div>
+<p class="small ipad-tip">ทิปสำหรับ Apple Pencil: หากเขียนเร็วๆ บน Safari แล้วเส้นขาด แนะนำให้ปิดฟีเจอร์ เขียนข้อความ (Scribble) ในเมนูตั้งค่า Apple Pencil ของ iPad จะช่วยให้ลากเส้นติดทุกจังหวะ</p>
 <div class="studio-pen"><label class="range-caption" for="pen-width">ความหนาหัวปากกา<output id="pen-width-value">5</output></label><input id="pen-width" type="range" min="1" max="14" value="5"></div>
 <div class="studio-foot"><button class="btn" id="undo-btn"><svg class="icon" aria-hidden="true"><use href="#i-undo"></use></svg>ย้อนกลับ</button><button class="btn btn-danger" id="clear-btn"><svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>ล้างช่อง</button></div>
 </section>
@@ -257,8 +293,11 @@ dialog{border:1px solid var(--line);border-radius:16px;color:var(--ink);backgrou
 <div class="dialog-head row-between"><h2 id="settings-title">ตั้งค่าสมอง AI</h2><button type="button" class="btn btn-icon" data-close="settings-dialog" aria-label="ปิด"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></div>
 <div class="dialog-content">
 <label class="field" for="provider">ผู้ให้บริการ AI<select id="provider"><option value="gemini">Gemini · gemini-2.5-flash</option><option value="openai">OpenAI · gpt-4o-mini</option></select></label>
+<section class="api-guide" id="settings-api-guide" aria-label="คู่มือขอ API Key"></section>
 <label class="field" for="api-key">API Key<input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="วาง API Key ของคุณ"></label>
-<p class="small">รหัสเก็บในเบราว์เซอร์นี้และใช้ส่งคำขอไปยังผู้ให้บริการที่เลือก เมื่อสแกน แอปจะส่งภาพใบงานไปให้ผู้ให้บริการวิเคราะห์</p>
+<p class="small">แอปเก็บ API Key ไว้ในเบราว์เซอร์บนเครื่องของคุณเท่านั้น และใช้คีย์ส่งคำขอโดยตรงไปยังผู้ให้บริการที่เลือก การทดสอบส่งข้อความสั้น ๆ และอาจใช้โควตา ส่วนการสแกนจะส่งภาพใบงาน</p>
+<div class="connection-actions"><button type="button" class="btn btn-soft" id="test-api">ทดสอบการเชื่อมต่อ API</button></div>
+<p class="connection-result" id="test-api-status" role="status" aria-atomic="true" hidden></p>
 <div class="dialog-actions"><button type="button" class="btn" data-close="settings-dialog">ยกเลิก</button><button class="btn btn-primary" type="submit">บันทึกการตั้งค่า</button></div>
 </div>
 </form>
@@ -392,6 +431,64 @@ dialog{border:1px solid var(--line);border-radius:16px;color:var(--ink);backgrou
   globalThis.ThaiLayout = { consonant, thai, zone, clusters, wrap, markLayout };
 })();
 </script>
+<script id="pen-input">
+'use strict';
+(() => {
+  const modes = ['auto', 'pen', 'mixed'];
+
+  function createPolicy(initialMode) {
+    let mode = modes.includes(initialMode) ? initialMode : 'auto';
+    let seenPen = false;
+    return {
+      get mode() { return mode; },
+      get penReady() { return mode === 'pen' || (mode === 'auto' && seenPen); },
+      setMode(next) { if (modes.includes(next)) mode = next; },
+      observe(type) {
+        if (type !== 'pen' || seenPen) return false;
+        seenPen = true;
+        return true;
+      },
+      accepts(type) {
+        if (mode === 'mixed') return ['touch', 'pen', 'mouse'].includes(type);
+        return type === 'pen' || (mode === 'auto' && type === 'mouse');
+      }
+    };
+  }
+
+  function createSession(policy) {
+    let activePointerId = null;
+    const tracks = event => activePointerId !== null && event.pointerId === activePointerId;
+    return {
+      get activePointerId() { return activePointerId; },
+      begin(event) {
+        if (activePointerId !== null || event.button !== 0 || !policy.accepts(event.pointerType)) return false;
+        activePointerId = event.pointerId;
+        return true;
+      },
+      tracks,
+      end(event) {
+        if (activePointerId === null || (event && !tracks(event))) return false;
+        activePointerId = null;
+        return true;
+      }
+    };
+  }
+
+  function readPressure(event, previous = .5) {
+    const pressure = event.pressure;
+    if (!Number.isFinite(pressure) || (event.type === 'pointerup' && pressure === 0)) return previous;
+    return Math.min(1, Math.max(0, pressure));
+  }
+
+  const strokeWidth = (width, pressure) => pressure === undefined ? width : width * (.42 + .9 * pressure);
+  const samples = event => {
+    const coalesced = event.getCoalescedEvents?.();
+    return coalesced?.length ? coalesced : [event];
+  };
+
+  globalThis.PenInput = { createPolicy, createSession, readPressure, strokeWidth, samples };
+})();
+</script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -470,6 +567,8 @@ function setJob(kind, message = '') {
 }
 
 function selectTab(name) {
+  finishStroke();
+  cancelBoxGesture?.();
   for (const id of ['worksheet', 'studio']) {
     $(id).hidden = name !== id;
     $(id + '-tab').setAttribute('aria-selected', String(name === id));
@@ -500,22 +599,70 @@ $('export-dialog').addEventListener('cancel', event => { if (exporting) event.pr
 
 let settingsDraft = {};
 let draftProvider;
-function openSettings() {
+let connectionTest = null;
+const apiGuides = {
+  gemini: {
+    title: 'Gemini · แนะนำ มีโควตาฟรี',
+    steps: [
+      'เปิดหน้าจัดการ API Key แล้วลงชื่อเข้าใช้ด้วยบัญชี Google',
+      'อ่านและยอมรับเงื่อนไขของ Google AI Studio หากระบบถาม',
+      'กด Create API key เลือกโปรเจกต์หากระบบถาม แล้วกด Copy เพื่อคัดลอกรหัส หรือคัดลอกคีย์เดิมที่ต้องการใช้',
+      'กลับมาที่สมุดลายมือ วางรหัสในช่อง API Key แล้วกดบันทึกการตั้งค่า'
+    ],
+    links: [['เปิดหน้าสร้างคีย์ Gemini', 'https://aistudio.google.com/api-keys'],
+      ['คู่มือ Google', 'https://ai.google.dev/gemini-api/docs/api-key']]
+  },
+  openai: {
+    title: 'OpenAI · ตรวจโควตาและการเรียกเก็บเงินในบัญชี',
+    steps: [
+      'เปิดคู่มือเริ่มต้นและลงชื่อเข้าใช้ OpenAI Platform',
+      'ไปที่ API keys แล้วเลือกโปรเจกต์ที่จะใช้',
+      'กด Create new secret key ตั้งชื่อตามต้องการ แล้วคัดลอกรหัสที่แสดง',
+      'กลับมาที่สมุดลายมือ วาง Secret Key ในช่อง API Key แล้วกดบันทึกการตั้งค่า'
+    ],
+    links: [['เปิดคู่มือ OpenAI', 'https://platform.openai.com/docs/quickstart'],
+      ['เปิดหน้าสร้าง Secret Key', 'https://platform.openai.com/api-keys']]
+  }
+};
+
+function renderApiGuide(target, provider) {
+  const guide = apiGuides[provider];
+  const steps = element('ol');
+  steps.append(...guide.steps.map(step => element('li', '', step)));
+  const links = element('div', 'guide-links');
+  for (const [label, url] of guide.links) {
+    const link = element('a', 'btn', label);
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    links.append(link);
+  }
+  target.replaceChildren(element('h3', '', guide.title), steps, links);
+}
+
+function openSettings(provider = settings.provider) {
   if ($('settings-dialog').open) return;
   settingsDraft = { ...settings.keys };
-  draftProvider = settings.provider;
+  draftProvider = provider;
   $('provider').value = draftProvider;
   $('api-key').value = settingsDraft[draftProvider] || '';
+  renderApiGuide($('settings-api-guide'), draftProvider);
   $('settings-dialog').showModal();
 }
-$('settings-btn').addEventListener('click', openSettings);
+$('settings-btn').addEventListener('click', () => openSettings());
+$('home-guide-provider').addEventListener('change', event => renderApiGuide($('home-guide-content'), event.target.value));
+$('home-guide-settings').addEventListener('click', () => openSettings($('home-guide-provider').value));
 $('provider').addEventListener('change', () => {
+  clearConnectionTest();
   settingsDraft[draftProvider] = $('api-key').value.trim();
   draftProvider = $('provider').value;
   $('api-key').value = settingsDraft[draftProvider] || '';
+  renderApiGuide($('settings-api-guide'), draftProvider);
 });
+$('api-key').addEventListener('input', clearConnectionTest);
 $('settings-form').addEventListener('submit', event => {
   event.preventDefault();
+  clearConnectionTest();
   settingsDraft[draftProvider] = $('api-key').value.trim();
   settings = { provider: draftProvider, keys: settingsDraft };
   try {
@@ -527,18 +674,126 @@ $('settings-form').addEventListener('submit', event => {
   $('settings-dialog').close();
   updateApiStatus();
 });
-$('settings-dialog').addEventListener('close', () => { $('api-key').value = ''; });
+$('settings-dialog').addEventListener('close', () => {
+  clearConnectionTest();
+  $('api-key').value = '';
+  settingsDraft = {};
+});
+
+function showConnectionStatus(state, message) {
+  $('test-api-status').dataset.state = state;
+  setStatus('test-api-status', message);
+}
+
+function clearConnectionTest() {
+  connectionTest?.abort();
+  connectionTest = null;
+  $('test-api').disabled = false;
+  showConnectionStatus('', '');
+}
+
+$('test-api').addEventListener('click', async () => {
+  if (connectionTest) return;
+  const key = $('api-key').value.trim();
+  if (!key) {
+    showConnectionStatus('error', 'วาง API Key ก่อนทดสอบการเชื่อมต่อ');
+    $('api-key').focus();
+    return;
+  }
+  const controller = new AbortController();
+  connectionTest = controller;
+  $('test-api').disabled = true;
+  showConnectionStatus('pending', 'กำลังทดสอบการเชื่อมต่อ…');
+  try {
+    await testAIConnection({ provider: draftProvider, key }, controller);
+    if (connectionTest === controller) showConnectionStatus('success', 'เชื่อมต่อสำเร็จ โมเดลตอบกลับแล้ว กดบันทึกเพื่อใช้คีย์นี้');
+  } catch (error) {
+    if (connectionTest === controller) showConnectionStatus('error', error.message);
+  } finally {
+    if (connectionTest === controller) {
+      connectionTest = null;
+      $('test-api').disabled = false;
+    }
+  }
+});
+
 function updateApiStatus() {
   const hint = $('api-status');
-  if (settings.keys[settings.provider]) {
+  const hasKey = Boolean(settings.keys[settings.provider]);
+  $('home-api-guide').hidden = hasKey;
+  if (hasKey) {
     hint.textContent = 'พร้อมสแกนด้วย ' + (settings.provider === 'gemini' ? 'Gemini' : 'OpenAI');
   } else {
+    $('home-guide-provider').value = settings.provider;
+    renderApiGuide($('home-guide-content'), settings.provider);
     const button = element('button', '', 'ตั้งค่า API Key');
     button.type = 'button';
-    button.addEventListener('click', openSettings);
+    button.addEventListener('click', () => openSettings());
     hint.replaceChildren(button, ' เพื่อเริ่มสแกน');
   }
 }
+
+const writingModeKey = 'samud-writing-mode-v1';
+const writingModes = {
+  auto: 'ตรวจจับปากกาอัตโนมัติ (แนะนำ)',
+  pen: 'เฉพาะปากกาเท่านั้น (วางมือเขียนได้ 100%)',
+  mixed: 'นิ้วมือ + ปากกา'
+};
+function readWritingMode() {
+  try { return localStorage.getItem(writingModeKey); } catch { return null; }
+}
+const writingPolicy = PenInput.createPolicy(readWritingMode());
+const boardPointer = PenInput.createSession(writingPolicy);
+const worksheetPointer = PenInput.createSession(writingPolicy);
+let cancelBoxGesture = null;
+
+function updateWritingMode() {
+  const ready = writingPolicy.penReady;
+  const message = ready ? 'เชื่อมต่อโหมดปากกาแล้ว — วางมือเขียนได้เลย' :
+    writingPolicy.mode === 'auto' ? 'รอปากกา · หากใช้นิ้ว ให้เลือกโหมดนิ้วมือ + ปากกา' : 'พร้อมใช้นิ้วมือหรือปากกา';
+  for (const name of ['worksheet', 'studio']) {
+    $(name + '-writing-mode').value = writingPolicy.mode;
+    const status = $(name + '-pen-status');
+    status.textContent = message;
+    status.classList.toggle('chip-ok', ready);
+    status.classList.toggle('chip-neutral', !ready);
+  }
+  $('paper').dataset.blockTouch = String(!writingPolicy.accepts('touch'));
+}
+
+for (const name of ['worksheet', 'studio']) {
+  const select = $(name + '-writing-mode');
+  for (const [value, label] of Object.entries(writingModes)) select.add(new Option(label, value));
+  select.addEventListener('change', () => {
+    finishStroke();
+    cancelBoxGesture?.();
+    writingPolicy.setMode(select.value);
+    try { localStorage.setItem(writingModeKey, writingPolicy.mode); } catch { /* ใช้ได้ในแท็บปัจจุบัน */ }
+    updateWritingMode();
+  });
+}
+
+function guardWritingSurface(surface) {
+  for (const name of ['pointerover', 'pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
+    surface.addEventListener(name, event => {
+      if (writingPolicy.observe(event.pointerType)) updateWritingMode();
+      if (event.pointerType && !writingPolicy.accepts(event.pointerType)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }, { capture: true, passive: false });
+  }
+  for (const name of ['contextmenu', 'selectstart', 'dragstart']) {
+    surface.addEventListener(name, event => event.preventDefault());
+  }
+}
+
+function capturePointer(surface, id) {
+  try { surface.setPointerCapture(id); } catch { /* Pointer อาจถูกยกเลิกไปแล้ว */ }
+}
+
+guardWritingSurface($('paper'));
+updateWritingMode();
 
 function newCanvas(width, height) {
   const image = document.createElement('canvas');
@@ -763,7 +1018,6 @@ let glyph = 'ก';
 let variant = 0;
 let strokes = [];
 let activeStroke = null;
-let strokePointer = null;
 let boardFrame = 0;
 let fontDb;
 let readFontFinished = false;
@@ -812,18 +1066,25 @@ function cleanStroke(stroke) {
     if (!Array.isArray(point) || point.length !== 2 || !point.every(Number.isFinite)) return null;
     points.push([clamp(point[0], 0, 720), clamp(point[1], 0, 390)]);
   }
-  return { width: clamp(stroke.width, 1, 14), points };
+  const clean = { width: clamp(stroke.width, 1, 14), points };
+  if (stroke.pressures !== undefined) {
+    if (!Array.isArray(stroke.pressures) || stroke.pressures.length !== points.length ||
+        !stroke.pressures.every(Number.isFinite)) return null;
+    clean.pressures = stroke.pressures.map(pressure => clamp(pressure, 0, 1));
+  }
+  return clean;
 }
 
 function makeGlyph(variantStrokes) {
   if (!variantStrokes.length) return null;
   const bounds = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
-  for (const { width, points } of variantStrokes) for (const [x, y] of points) {
-    bounds.left = Math.min(bounds.left, x - width / 2);
-    bounds.top = Math.min(bounds.top, y - width / 2);
-    bounds.right = Math.max(bounds.right, x + width / 2);
-    bounds.bottom = Math.max(bounds.bottom, y + width / 2);
-  }
+  for (const { width, points, pressures } of variantStrokes) points.forEach(([x, y], index) => {
+    const radius = PenInput.strokeWidth(width, pressures?.[index]) / 2;
+    bounds.left = Math.min(bounds.left, x - radius);
+    bounds.top = Math.min(bounds.top, y - radius);
+    bounds.right = Math.max(bounds.right, x + radius);
+    bounds.bottom = Math.max(bounds.bottom, y + radius);
+  });
   return { strokes: variantStrokes, bounds };
 }
 
@@ -873,7 +1134,7 @@ function persistFont() {
   });
 }
 
-function strokePath(ctx, { points, width }) {
+function strokePath(ctx, { points, width, pressures }) {
   if (!points.length) return;
   ctx.lineWidth = width;
   ctx.lineCap = 'round';
@@ -881,8 +1142,23 @@ function strokePath(ctx, { points, width }) {
   ctx.beginPath();
   const [x, y] = points[0];
   if (points.length === 1) {
-    ctx.arc(x, y, width / 2, 0, Math.PI * 2);
+    ctx.arc(x, y, PenInput.strokeWidth(width, pressures?.[0]) / 2, 0, Math.PI * 2);
     ctx.fill();
+    return;
+  }
+  if (pressures) {
+    let start = points[0];
+    for (let i = 1; i < points.length; i++) {
+      const [cx, cy] = points[i];
+      const next = points[i + 1];
+      const end = next ? [(cx + next[0]) / 2, (cy + next[1]) / 2] : points[i];
+      ctx.lineWidth = PenInput.strokeWidth(width, (pressures[i - 1] + pressures[i]) / 2);
+      ctx.beginPath();
+      ctx.moveTo(...start);
+      ctx.quadraticCurveTo(cx, cy, ...end);
+      ctx.stroke();
+      start = end;
+    }
     return;
   }
   ctx.moveTo(x, y);
@@ -988,23 +1264,29 @@ function boardPoint(event, box = drawBoard.getBoundingClientRect()) {
   return [clamp((event.clientX - box.left) * 720 / box.width, 0, 720),
     clamp((event.clientY - box.top) * 390 / box.height, 0, 390)];
 }
+function appendBoardSample(event, box) {
+  const point = boardPoint(event, box);
+  const last = activeStroke.points.at(-1);
+  if (activeStroke.points.length >= 6000 || Math.hypot(point[0] - last[0], point[1] - last[1]) < 1) return;
+  activeStroke.points.push(point);
+  const { pressures } = activeStroke;
+  if (pressures) pressures.push(PenInput.readPressure(event, pressures.at(-1)));
+}
+
+guardWritingSurface($('drawing-canvas').parentElement);
 drawBoard.addEventListener('pointerdown', event => {
-  if (!readFontFinished || strokePointer !== null || event.button !== 0 || strokes.length >= 300) return;
-  drawBoard.setPointerCapture(event.pointerId);
-  strokePointer = event.pointerId;
+  if (!readFontFinished || strokes.length >= 300 || !boardPointer.begin(event)) return;
+  event.preventDefault();
+  capturePointer(drawBoard, event.pointerId);
   activeStroke = { width: Number($('pen-width').value), points: [boardPoint(event)] };
+  if (event.pointerType === 'pen') activeStroke.pressures = [PenInput.readPressure(event)];
   strokes.push(activeStroke);
   drawBoardContent();
 });
 drawBoard.addEventListener('pointermove', event => {
-  if (strokePointer !== event.pointerId || !activeStroke) return;
-  const coalesced = event.getCoalescedEvents?.();
+  if (!boardPointer.tracks(event)) return;
   const box = drawBoard.getBoundingClientRect();
-  for (const item of coalesced?.length ? coalesced : [event]) {
-    const point = boardPoint(item, box);
-    const last = activeStroke.points.at(-1);
-    if (activeStroke.points.length < 6000 && Math.hypot(point[0] - last[0], point[1] - last[1]) >= 1) activeStroke.points.push(point);
-  }
+  for (const item of PenInput.samples(event)) appendBoardSample(item, box);
   if (!boardFrame) {
     boardFrame = requestAnimationFrame(() => {
       boardFrame = 0;
@@ -1013,17 +1295,15 @@ drawBoard.addEventListener('pointermove', event => {
   }
 });
 function finishStroke(event) {
-  if (!activeStroke || (event && event.pointerId !== strokePointer)) return;
-  if (event?.type === 'pointerup' && activeStroke.points.length < 6000) {
-    const point = boardPoint(event);
-    const last = activeStroke.points.at(-1);
-    if (Math.hypot(point[0] - last[0], point[1] - last[1]) >= 1) activeStroke.points.push(point);
-  }
-  strokePointer = null;
+  if (!boardPointer.end(event)) return;
+  if (event?.type === 'pointerup') appendBoardSample(event);
   activeStroke = null;
   saveVariant();
 }
 for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) drawBoard.addEventListener(name, finishStroke);
+drawBoard.addEventListener('pointerleave', event => {
+  if (!drawBoard.hasPointerCapture?.(event.pointerId)) finishStroke(event);
+});
 $('pen-width').addEventListener('input', () => { $('pen-width-value').value = $('pen-width').value; });
 $('undo-btn').addEventListener('click', () => { finishStroke(); strokes.pop(); saveVariant(); });
 $('clear-btn').addEventListener('click', () => { finishStroke(); strokes = []; saveVariant(); });
@@ -1353,36 +1633,52 @@ function makeHitBox(answer, index) {
   node.append(element('span', 'hit-label', answer.number || String(index + 1)));
   placeBox(node, answer.box);
   let drag;
-  let dragged = false;
   node.addEventListener('pointerdown', event => {
-    if (job || exporting || drag || event.button !== 0) return;
+    if (job || exporting || !worksheetPointer.begin(event)) return;
+    event.preventDefault();
     selectBox(answer);
-    dragged = false;
-    node.setPointerCapture(event.pointerId);
+    capturePointer(node, event.pointerId);
     const stageRect = $('paper').getBoundingClientRect();
-    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, initial: { ...answer.box },
-      sx: 1000 / stageRect.width, sy: 1000 / stageRect.height };
+    drag = { x: event.clientX, y: event.clientY, initial: { ...answer.box },
+      sx: 1000 / stageRect.width, sy: 1000 / stageRect.height, moved: false };
+    cancelBoxGesture = finishDrag;
     node.classList.add('dragging');
   });
-  node.addEventListener('pointermove', event => {
-    if (drag?.id !== event.pointerId) return;
+  function moveDrag(event) {
+    if (!drag || !worksheetPointer.tracks(event)) return;
     const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
-    dragged ||= Math.hypot(dx, dy) > 3;
-    if (!dragged) return;
+    drag.moved ||= Math.hypot(dx, dy) > 3;
+    if (!drag.moved) return;
     answer.box.x = clamp(drag.initial.x + dx * drag.sx, 0, 1000 - answer.box.width);
     answer.box.y = clamp(drag.initial.y + dy * drag.sy, 0, 1000 - answer.box.height);
     placeBox(node, answer.box);
     scheduleInk();
-  });
-  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    node.addEventListener(name, event => {
-      if (drag?.id !== event.pointerId) return;
-      drag = null;
-      node.classList.remove('dragging');
-    });
   }
+  node.addEventListener('pointermove', moveDrag);
+  function finishDrag(event) {
+    if (!drag || (event && !worksheetPointer.tracks(event))) return;
+    const released = event?.type === 'pointerup';
+    if (released) moveDrag(event);
+    worksheetPointer.end(event);
+    const { moved, initial } = drag;
+    drag = null;
+    cancelBoxGesture = null;
+    node.classList.remove('dragging');
+    if (released && !moved && !job && !exporting) openAnswer(answer);
+    if (!released && moved) {
+      answer.box = initial;
+      placeBox(node, answer.box);
+      scheduleInk();
+    }
+  }
+  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    node.addEventListener(name, finishDrag);
+  }
+  node.addEventListener('pointerleave', event => {
+    if (!node.hasPointerCapture?.(event.pointerId)) finishDrag(event);
+  });
   node.addEventListener('click', event => {
-    if (job || exporting || (event.detail !== 0 && dragged)) return;
+    if (job || exporting || event.detail !== 0 || event.pointerType) return;
     openAnswer(answer);
   });
   node.addEventListener('keydown', event => {
@@ -1409,6 +1705,7 @@ function scheduleInk() {
 function renderPage() {
   const page = activePage();
   if (!page) return;
+  cancelBoxGesture?.();
   $('file-name').textContent = documentName;
   $('file-name').title = documentName;
   $('preview-mode').textContent = isDemo ? 'โหมดตัวอย่าง' : page.pdf ? 'ใบงาน PDF' : 'ใบงานรูปภาพ';
@@ -1585,21 +1882,63 @@ function cleanAnswers(result) {
       box: normalizeBox(item.box) };
   });
 }
-function requestError(status) {
+function requestError(status, result) {
+  const error = result?.error;
+  if (error?.code === 'invalid_api_key' || error?.details?.some?.(detail => detail.reason === 'API_KEY_INVALID')) {
+    return 'API Key ใช้งานไม่ได้ ตรวจว่าคัดลอกรหัสครบและเลือกผู้ให้บริการถูกต้อง';
+  }
   if (status === 401 || status === 403) return 'ผู้ให้บริการปฏิเสธรหัส API Key หรือสิทธิ์ใช้โมเดล';
+  if (error?.code === 'insufficient_quota') return 'โควตา API ไม่พอ ตรวจยอดใช้และการเรียกเก็บเงินในบัญชี';
   if (status === 429) return 'ถึงขีดจำกัดการใช้งาน AI กรุณาลองอีกครั้งหรือตรวจโควตา';
+  if (status === 404) return 'บัญชีนี้เข้าถึงโมเดลที่เลือกไม่ได้ ตรวจสิทธิ์ของโปรเจกต์และคีย์';
   if (status >= 500) return 'ผู้ให้บริการ AI ขัดข้องชั่วคราว กรุณาลองอีกครั้ง';
   return 'ส่งคำขอ AI ไม่สำเร็จ (HTTP ' + status + ') ตรวจการตั้งค่ารหัสและสถานะบัญชี';
 }
 
+async function requestAI(config, body, controller = new AbortController(), timeoutMs = 115000) {
+  const headers = { 'Content-Type': 'application/json' };
+  const gemini = config.provider === 'gemini';
+  const url = gemini ? 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent' :
+    'https://api.openai.com/v1/chat/completions';
+  if (gemini) headers['x-goog-api-key'] = config.key;
+  else headers.Authorization = 'Bearer ' + config.key;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(requestError(response.status, result));
+    if (!result) throw new Error('ผู้ให้บริการส่งผลลัพธ์ในรูปแบบที่อ่านไม่ได้');
+    const candidate = gemini ? result.candidates?.[0] : result.choices?.[0];
+    const output = gemini ? candidate?.content?.parts?.filter(part => !part.thought).map(part => part.text || '').join('') :
+      candidate?.message?.content;
+    return { candidate, output };
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('รอคำตอบจาก AI นานเกินกำหนด กรุณาลองอีกครั้ง');
+    if (error instanceof TypeError) throw new Error('เชื่อมต่อ AI ไม่สำเร็จ ตรวจอินเทอร์เน็ตและลองเปิดแอปผ่าน HTTPS');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function testAIConnection(config, controller) {
+  const prompt = 'Reply with OK.';
+  const body = config.provider === 'gemini' ? {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: 32, thinkingConfig: { thinkingBudget: 0 } }
+  } : {
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: prompt }],
+    max_completion_tokens: 16
+  };
+  const { output } = await requestAI(config, body, controller, 25000);
+  if (typeof output !== 'string' || !output.trim()) throw new Error('เชื่อมต่อผู้ให้บริการได้ แต่โมเดลยังไม่ส่งข้อความตอบกลับ');
+}
+
 async function askAI(source, config, extra = '') {
   const dataUrl = imageData(source);
-  const gemini = config.provider === 'gemini';
-  let url, body;
-  const headers = { 'Content-Type': 'application/json' };
-  if (gemini) {
-    url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-    headers['x-goog-api-key'] = config.key;
+  let body;
+  if (config.provider === 'gemini') {
     body = {
       systemInstruction: { parts: [{ text: instructions }] },
       contents: [{ role: 'user', parts: [{ text: extra || 'สแกนโจทย์ทุกข้อในภาพและส่งผลตามโครงสร้าง' },
@@ -1607,8 +1946,6 @@ async function askAI(source, config, extra = '') {
       generationConfig: { responseMimeType: 'application/json', responseJsonSchema: answerSchema, maxOutputTokens: 12000 }
     };
   } else {
-    url = 'https://api.openai.com/v1/chat/completions';
-    headers.Authorization = 'Bearer ' + config.key;
     body = {
       model: 'gpt-4o-mini',
       messages: [{ role: 'system', content: instructions },
@@ -1618,31 +1955,16 @@ async function askAI(source, config, extra = '') {
       max_completion_tokens: 12000
     };
   }
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 115000);
+  const { candidate, output } = await requestAI(config, body);
+  if (candidate?.finishReason === 'MAX_TOKENS' || candidate?.finish_reason === 'length') {
+    throw new Error('ผลลัพธ์ AI ยาวเกินกำหนด ลองนำเข้าภาพที่มีโจทย์น้อยลง');
+  }
+  if (!output) throw new Error('AI ไม่ส่งคำตอบกลับมา กรุณาตรวจความชัดของภาพ');
   try {
-    const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
-    if (!response.ok) throw new Error(requestError(response.status));
-    const result = await response.json();
-    const candidate = gemini ? result.candidates?.[0] : result.choices?.[0];
-    const output = gemini ? candidate?.content?.parts?.filter(part => !part.thought).map(part => part.text || '').join('') :
-      candidate?.message?.content;
-    if (candidate?.finishReason === 'MAX_TOKENS' || candidate?.finish_reason === 'length') {
-      throw new Error('ผลลัพธ์ AI ยาวเกินกำหนด ลองนำเข้าภาพที่มีโจทย์น้อยลง');
-    }
-    if (!output) throw new Error('AI ไม่ส่งคำตอบกลับมา กรุณาตรวจความชัดของภาพ');
-    try {
-      return cleanAnswers(JSON.parse(output));
-    } catch (error) {
-      if (error instanceof SyntaxError) throw new Error('AI ส่งผลลัพธ์ JSON ไม่สมบูรณ์ กรุณาลองอีกครั้ง');
-      throw error;
-    }
+    return cleanAnswers(JSON.parse(output));
   } catch (error) {
-    if (error.name === 'AbortError') throw new Error('รอคำตอบจาก AI นานเกินกำหนด กรุณาลองอีกครั้ง');
-    if (error instanceof TypeError) throw new Error('เชื่อมต่อ AI ไม่สำเร็จ ตรวจอินเทอร์เน็ตและลองเปิดแอปผ่าน HTTPS');
+    if (error instanceof SyntaxError) throw new Error('AI ส่งผลลัพธ์ JSON ไม่สมบูรณ์ กรุณาลองอีกครั้ง');
     throw error;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 function getConfig() {
@@ -1672,7 +1994,7 @@ async function scanWorksheet() {
         succeeded++;
       } catch (error) {
         errors.push('หน้า ' + (index + 1) + ' ' + error.message);
-        if (!succeeded && /รหัส API Key|ขีดจำกัดการใช้งาน|เชื่อมต่อ AI/.test(error.message)) break;
+        if (!succeeded && /API Key|โควตา|ขีดจำกัดการใช้งาน|เชื่อมต่อ AI|เข้าถึงโมเดล/.test(error.message)) break;
       } finally {
         if (source && source !== page.source) source.width = source.height = 1;
       }
