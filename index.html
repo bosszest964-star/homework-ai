@@ -292,11 +292,13 @@ dialog{border:1px solid var(--line);border-radius:16px;color:var(--ink);backgrou
 <form id="settings-form">
 <div class="dialog-head row-between"><h2 id="settings-title">ตั้งค่าสมอง AI</h2><button type="button" class="btn btn-icon" data-close="settings-dialog" aria-label="ปิด"><svg class="icon" aria-hidden="true"><use href="#i-close"></use></svg></button></div>
 <div class="dialog-content">
-<label class="field" for="provider">ผู้ให้บริการ AI<select id="provider"><option value="gemini">Gemini · gemini-2.5-flash</option><option value="openai">OpenAI · gpt-4o-mini</option></select></label>
+<label class="field" for="provider">ผู้ให้บริการ AI<select id="provider"><option value="gemini">Gemini</option><option value="openai">OpenAI</option></select></label>
 <section class="api-guide" id="settings-api-guide" aria-label="คู่มือขอ API Key"></section>
 <label class="field" for="api-key">API Key<input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="วาง API Key ของคุณ"></label>
+<label class="field" for="ai-model">โมเดล<select id="ai-model"></select></label>
+<label class="field" for="custom-model">รหัสโมเดลกำหนดเอง <input id="custom-model" type="text" autocomplete="off" spellcheck="false" placeholder="เว้นว่างเพื่อใช้โมเดลที่เลือก"></label>
 <p class="small">แอปเก็บ API Key ไว้ในเบราว์เซอร์บนเครื่องของคุณเท่านั้น และใช้คีย์ส่งคำขอโดยตรงไปยังผู้ให้บริการที่เลือก การทดสอบส่งข้อความสั้น ๆ และอาจใช้โควตา ส่วนการสแกนจะส่งภาพใบงาน</p>
-<div class="connection-actions"><button type="button" class="btn btn-soft" id="test-api">ทดสอบการเชื่อมต่อ API</button></div>
+<div class="connection-actions"><button type="button" class="btn btn-soft" id="list-models">ดึงรายชื่อโมเดลที่ใช้ได้จากคีย์ของฉัน</button><button type="button" class="btn btn-soft" id="test-api">ทดสอบการเชื่อมต่อ API</button></div>
 <p class="connection-result" id="test-api-status" role="status" aria-atomic="true" hidden></p>
 <div class="dialog-actions"><button type="button" class="btn" data-close="settings-dialog">ยกเลิก</button><button class="btn btn-primary" type="submit">บันทึกการตั้งค่า</button></div>
 </div>
@@ -489,6 +491,165 @@ dialog{border:1px solid var(--line);border-radius:16px;color:var(--ink);backgrou
   globalThis.PenInput = { createPolicy, createSession, readPressure, strokeWidth, samples };
 })();
 </script>
+<script id="ai-api">
+'use strict';
+(() => {
+  const presets = Object.freeze({
+    gemini: Object.freeze(['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-4-hydrogen', 'gemini-3.6-flash']),
+    openai: Object.freeze(['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.2-sol'])
+  });
+  const geminiModelsUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
+  const fallbackStatuses = [403, 404, 429];
+
+  function normalizeModel(provider, value) {
+    const id = typeof value === 'string' ? value.trim() : '';
+    return provider === 'gemini' ? id.replace(/^models\//, '') : id;
+  }
+  const modelFor = ({ provider, model }) => normalizeModel(provider, model) || presets[provider][0];
+
+  class ApiError extends Error {
+    constructor(message, { status = 0, invalidKey = false, stopsScan = false } = {}) {
+      super(message);
+      this.status = status;
+      this.invalidKey = invalidKey;
+      this.stopsScan = stopsScan;
+    }
+  }
+
+  function responseError(status, result) {
+    const error = result?.error;
+    const reasons = Array.isArray(error?.details) ? error.details.map(detail => detail?.reason) : [];
+    const invalidKey = status === 401 || error?.code === 'invalid_api_key' || reasons.includes('API_KEY_INVALID') ||
+      (status === 400 && /API key not valid|invalid API key/i.test(error?.message || ''));
+    const stopsScan = invalidKey || fallbackStatuses.includes(status);
+    let message = 'ส่งคำขอไม่สำเร็จ ตรวจรหัสโมเดลและการตั้งค่า API';
+    if (invalidKey) message = 'API Key ใช้งานไม่ได้ ตรวจว่าคัดลอกรหัสครบและเลือกผู้ให้บริการถูกต้อง';
+    else if (reasons.some(reason => /^API_KEY_.*_BLOCKED$/.test(reason))) message = 'ข้อจำกัดของ API Key ไม่อนุญาตให้เว็บนี้เรียก API ตรวจข้อจำกัดของคีย์ในบัญชี Google';
+    else if (status === 403) message = 'คีย์หรือโปรเจกต์ไม่มีสิทธิ์เรียกโมเดลนี้ ตรวจสิทธิ์และการเปิดใช้ API';
+    else if (status === 404) message = 'ไม่พบโมเดลนี้หรือโมเดลไม่รองรับคำขอ';
+    else if (error?.code === 'insufficient_quota') message = 'โควตา API ไม่พอ ตรวจยอดใช้และการเรียกเก็บเงินในบัญชี';
+    else if (status === 429) message = 'ถึงขีดจำกัดการเรียก API หรือโควตาหมด';
+    else if (status >= 500) message = 'ผู้ให้บริการ AI ขัดข้องชั่วคราว กรุณาลองอีกครั้ง';
+    return new ApiError(message + ' (HTTP ' + status + ')', { status, invalidKey, stopsScan });
+  }
+
+  async function fetchJson(url, options) {
+    const response = await fetch(url, options);
+    const result = await response.json().catch(() => null);
+    if (options.signal.aborted) throw new ApiError('คำขอถูกยกเลิก');
+    if (!response.ok) throw responseError(response.status, result);
+    if (!result || typeof result !== 'object') throw new ApiError('ผู้ให้บริการส่งผลลัพธ์ในรูปแบบที่อ่านไม่ได้');
+    return result;
+  }
+
+  async function runRequest(controller, timeoutMs, run) {
+    const { signal } = controller;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await run(signal);
+    } catch (error) {
+      if (signal.aborted) throw new ApiError('หมดเวลารอการตอบกลับจาก AI กรุณาลองอีกครั้ง', { stopsScan: true });
+      if (error instanceof TypeError) throw new ApiError('เชื่อมต่อ AI ไม่สำเร็จ ตรวจอินเทอร์เน็ตและลองเปิดแอปผ่าน HTTPS', { stopsScan: true });
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  function generate(config, body, { controller = new AbortController(), timeoutMs = 115000, onFallback } = {}) {
+    const selected = modelFor(config);
+    const gemini = config.provider === 'gemini';
+    const models = gemini ? [selected, ...presets.gemini.filter(model => model !== selected)] : [selected];
+    const headers = { 'Content-Type': 'application/json' };
+    if (gemini) headers['x-goog-api-key'] = config.key;
+    else headers.Authorization = 'Bearer ' + config.key;
+
+    return runRequest(controller, timeoutMs, async signal => {
+      const failures = [];
+      for (const [index, model] of models.entries()) {
+        const url = gemini ? geminiModelsUrl + '/' + encodeURIComponent(model) + ':generateContent' :
+          'https://api.openai.com/v1/chat/completions';
+        try {
+          const result = await fetchJson(url, { method: 'POST', headers, signal, cache: 'no-store',
+            body: JSON.stringify(gemini ? body : { ...body, model }) });
+          const candidate = gemini ? result.candidates?.[0] : result.choices?.[0];
+          const output = gemini ? candidate?.content?.parts?.filter(part => !part.thought).map(part => part.text || '').join('') :
+            candidate?.message?.content;
+          return { model, candidate, output };
+        } catch (error) {
+          if (!gemini || error.invalidKey || !fallbackStatuses.includes(error.status)) throw error;
+          failures.push(model + ' HTTP ' + error.status);
+          const next = models[index + 1];
+          if (!next) throw new ApiError('ลองโมเดล Gemini ครบแล้ว (' + failures.join(', ') + ') · ' + error.message +
+            ' · ลองดึงรายชื่อโมเดลจากคีย์หรือตรวจโควตา', { status: error.status, stopsScan: true });
+          onFallback?.({ from: model, to: next, error });
+        }
+      }
+    });
+  }
+
+  function listGeminiModels(key, { controller = new AbortController(), timeoutMs = 25000 } = {}) {
+    return runRequest(controller, timeoutMs, async signal => {
+      const url = new URL(geminiModelsUrl);
+      url.searchParams.set('key', key);
+      const models = new Set();
+      const seenTokens = new Set();
+      let token;
+      do {
+        if (token) url.searchParams.set('pageToken', token);
+        const result = await fetchJson(url.href, { method: 'GET', signal, cache: 'no-store', referrerPolicy: 'no-referrer' });
+        if (!Array.isArray(result.models) && result.models !== undefined) {
+          throw new ApiError('Google ส่งรายชื่อโมเดลในรูปแบบที่อ่านไม่ได้');
+        }
+        for (const entry of result.models || []) {
+          const id = normalizeModel('gemini', entry?.name);
+          if (id && Array.isArray(entry.supportedGenerationMethods) && entry.supportedGenerationMethods.includes('generateContent')) models.add(id);
+        }
+        token = result.nextPageToken;
+        if (token && seenTokens.has(token)) throw new ApiError('Google ส่งหน้ารายชื่อโมเดลซ้ำ กรุณาลองอีกครั้ง');
+        if (token) seenTokens.add(token);
+      } while (token);
+      return [...models];
+    });
+  }
+
+  async function testConnection(config, options) {
+    const prompt = 'Reply with OK.';
+    const body = config.provider === 'gemini' ? {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 1024 }
+    } : {
+      messages: [{ role: 'user', content: prompt }],
+      max_completion_tokens: 1024
+    };
+    const { output, model } = await generate(config, body, { timeoutMs: 25000, ...options });
+    if (typeof output !== 'string' || !output.trim()) throw new ApiError('เชื่อมต่อผู้ให้บริการได้ แต่โมเดลยังไม่ส่งข้อความตอบกลับ');
+    return model;
+  }
+
+  function worksheetBody(provider, dataUrl, instructions, prompt, schema) {
+    if (provider === 'gemini') {
+      const image = /^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/]+=*)$/.exec(dataUrl);
+      if (!image) throw new ApiError('แปลงภาพใบงานเป็น Base64 ไม่สำเร็จ');
+      const [, mimeType, data] = image;
+      return {
+        systemInstruction: { parts: [{ text: instructions }] },
+        contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType, data } }] }],
+        generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, maxOutputTokens: 12000 }
+      };
+    }
+    return {
+      messages: [{ role: 'system', content: instructions },
+        { role: 'user', content: [{ type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } }] }],
+      response_format: { type: 'json_schema', json_schema: { name: 'worksheet_answers', strict: true, schema } },
+      max_completion_tokens: 12000
+    };
+  }
+
+  globalThis.WorksheetAI = { presets, normalizeModel, modelFor, generate, listGeminiModels, testConnection, worksheetBody };
+})();
+</script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -516,9 +677,9 @@ const keyName = 'samud-ai-v1';
 function readSettings() {
   try {
     const stored = JSON.parse(localStorage.getItem(keyName) || '{}');
-    return { provider: stored.provider === 'openai' ? 'openai' : 'gemini', keys: stored.keys || {} };
+    return { provider: stored.provider === 'openai' ? 'openai' : 'gemini', keys: stored.keys || {}, models: stored.models || {} };
   } catch {
-    return { provider: 'gemini', keys: {} };
+    return { provider: 'gemini', keys: {}, models: {} };
   }
 }
 let settings = readSettings();
@@ -597,9 +758,10 @@ for (const button of document.querySelectorAll('[data-close]')) {
 $('answer-dialog').addEventListener('cancel', event => { if (retrying) event.preventDefault(); });
 $('export-dialog').addEventListener('cancel', event => { if (exporting) event.preventDefault(); });
 
-let settingsDraft = {};
+let settingsDraft;
 let draftProvider;
-let connectionTest = null;
+let settingsRequest = null;
+let discoveredModels = [];
 const apiGuides = {
   gemini: {
     title: 'Gemini · แนะนำ มีโควตาฟรี',
@@ -640,31 +802,72 @@ function renderApiGuide(target, provider) {
   target.replaceChildren(element('h3', '', guide.title), steps, links);
 }
 
+function selectedDraftModel() {
+  return WorksheetAI.modelFor({ provider: draftProvider, model: $('custom-model').value.trim() || $('ai-model').value });
+}
+
+function renderModelOptions(selected) {
+  const presets = WorksheetAI.presets[draftProvider];
+  const ids = [...new Set([...presets, ...discoveredModels])];
+  const options = ids.map(id => new Option(id + (discoveredModels.includes(id) ? ' · พบจากคีย์' : ''), id));
+  const dropdown = $('ai-model');
+  dropdown.replaceChildren(...options);
+  const isListed = ids.includes(selected);
+  dropdown.value = isListed ? selected : presets[0];
+  $('custom-model').value = isListed ? '' : selected;
+}
+
+function draftConfig() {
+  return { provider: draftProvider, key: $('api-key').value.trim(), model: selectedDraftModel() };
+}
+
+function saveDraftProvider() {
+  const { key, model } = draftConfig();
+  settingsDraft.keys[draftProvider] = key;
+  settingsDraft.models[draftProvider] = model;
+}
+
+function showDraftProvider(provider) {
+  draftProvider = provider;
+  discoveredModels = [];
+  $('provider').value = provider;
+  $('api-key').value = settingsDraft.keys[provider] || '';
+  $('list-models').hidden = provider !== 'gemini';
+  renderModelOptions(WorksheetAI.modelFor({ provider, model: settingsDraft.models[provider] }));
+  renderApiGuide($('settings-api-guide'), provider);
+}
+
 function openSettings(provider = settings.provider) {
   if ($('settings-dialog').open) return;
-  settingsDraft = { ...settings.keys };
-  draftProvider = provider;
-  $('provider').value = draftProvider;
-  $('api-key').value = settingsDraft[draftProvider] || '';
-  renderApiGuide($('settings-api-guide'), draftProvider);
+  settingsDraft = { keys: { ...settings.keys }, models: { ...settings.models } };
+  showDraftProvider(provider);
   $('settings-dialog').showModal();
 }
 $('settings-btn').addEventListener('click', () => openSettings());
 $('home-guide-provider').addEventListener('change', event => renderApiGuide($('home-guide-content'), event.target.value));
 $('home-guide-settings').addEventListener('click', () => openSettings($('home-guide-provider').value));
 $('provider').addEventListener('change', () => {
-  clearConnectionTest();
-  settingsDraft[draftProvider] = $('api-key').value.trim();
-  draftProvider = $('provider').value;
-  $('api-key').value = settingsDraft[draftProvider] || '';
-  renderApiGuide($('settings-api-guide'), draftProvider);
+  clearSettingsRequest();
+  saveDraftProvider();
+  showDraftProvider($('provider').value);
 });
-$('api-key').addEventListener('input', clearConnectionTest);
+$('api-key').addEventListener('input', () => {
+  clearSettingsRequest();
+  if (discoveredModels.length) {
+    discoveredModels = [];
+    renderModelOptions(selectedDraftModel());
+  }
+});
+$('ai-model').addEventListener('change', () => {
+  $('custom-model').value = '';
+  clearSettingsRequest();
+});
+$('custom-model').addEventListener('input', clearSettingsRequest);
 $('settings-form').addEventListener('submit', event => {
   event.preventDefault();
-  clearConnectionTest();
-  settingsDraft[draftProvider] = $('api-key').value.trim();
-  settings = { provider: draftProvider, keys: settingsDraft };
+  clearSettingsRequest();
+  saveDraftProvider();
+  settings = { provider: draftProvider, ...settingsDraft };
   try {
     localStorage.setItem(keyName, JSON.stringify(settings));
     toast('บันทึกการตั้งค่าแล้ว');
@@ -675,9 +878,10 @@ $('settings-form').addEventListener('submit', event => {
   updateApiStatus();
 });
 $('settings-dialog').addEventListener('close', () => {
-  clearConnectionTest();
+  clearSettingsRequest();
   $('api-key').value = '';
-  settingsDraft = {};
+  settingsDraft = null;
+  discoveredModels = [];
 });
 
 function showConnectionStatus(state, message) {
@@ -685,44 +889,65 @@ function showConnectionStatus(state, message) {
   setStatus('test-api-status', message);
 }
 
-function clearConnectionTest() {
-  connectionTest?.abort();
-  connectionTest = null;
-  $('test-api').disabled = false;
+function setSettingsRequest(controller) {
+  settingsRequest = controller;
+  $('test-api').disabled = Boolean(controller);
+  $('list-models').disabled = Boolean(controller);
+}
+
+function clearSettingsRequest() {
+  settingsRequest?.abort();
+  setSettingsRequest(null);
   showConnectionStatus('', '');
 }
 
-$('test-api').addEventListener('click', async () => {
-  if (connectionTest) return;
-  const key = $('api-key').value.trim();
-  if (!key) {
-    showConnectionStatus('error', 'วาง API Key ก่อนทดสอบการเชื่อมต่อ');
+function fallbackMessage({ from, to, error }) {
+  return from + ' · ' + error.message + ' กำลังลอง ' + to;
+}
+
+async function runSettingsAction(list) {
+  if (settingsRequest || (list && draftProvider !== 'gemini')) return;
+  const config = draftConfig();
+  if (!config.key) {
+    showConnectionStatus('error', 'วาง API Key ก่อน ' + (list ? 'ดึงรายชื่อโมเดล' : 'ทดสอบการเชื่อมต่อ'));
     $('api-key').focus();
     return;
   }
   const controller = new AbortController();
-  connectionTest = controller;
-  $('test-api').disabled = true;
-  showConnectionStatus('pending', 'กำลังทดสอบการเชื่อมต่อ…');
+  setSettingsRequest(controller);
+  showConnectionStatus('pending', list ? 'กำลังดึงรายชื่อโมเดล…' : 'กำลังทดสอบ ' + config.model + '…');
   try {
-    await testAIConnection({ provider: draftProvider, key }, controller);
-    if (connectionTest === controller) showConnectionStatus('success', 'เชื่อมต่อสำเร็จ โมเดลตอบกลับแล้ว กดบันทึกเพื่อใช้คีย์นี้');
-  } catch (error) {
-    if (connectionTest === controller) showConnectionStatus('error', error.message);
-  } finally {
-    if (connectionTest === controller) {
-      connectionTest = null;
-      $('test-api').disabled = false;
+    if (list) {
+      const models = await WorksheetAI.listGeminiModels(config.key, { controller });
+      if (settingsRequest !== controller) return;
+      discoveredModels = models;
+      renderModelOptions(config.model);
+      showConnectionStatus(models.length ? 'success' : 'error', models.length ?
+        'พบ ' + models.length + ' โมเดลที่รองรับ generateContent เลือกได้ในช่องโมเดล' :
+        'คีย์นี้ไม่มีโมเดลที่รองรับ generateContent ในรายการของ Google');
+    } else {
+      const model = await WorksheetAI.testConnection(config, { controller, onFallback: change => {
+        if (settingsRequest === controller) showConnectionStatus('pending', fallbackMessage(change));
+      } });
+      if (settingsRequest !== controller) return;
+      const used = model === config.model ? model : 'โมเดลสำรอง ' + model;
+      showConnectionStatus('success', 'เชื่อมต่อด้วย ' + used + ' สำเร็จ กดบันทึกเพื่อใช้การตั้งค่านี้');
     }
+  } catch (error) {
+    if (settingsRequest === controller) showConnectionStatus('error', error.message);
+  } finally {
+    if (settingsRequest === controller) setSettingsRequest(null);
   }
-});
+}
+$('test-api').addEventListener('click', () => runSettingsAction(false));
+$('list-models').addEventListener('click', () => runSettingsAction(true));
 
 function updateApiStatus() {
   const hint = $('api-status');
   const hasKey = Boolean(settings.keys[settings.provider]);
   $('home-api-guide').hidden = hasKey;
   if (hasKey) {
-    hint.textContent = 'พร้อมสแกนด้วย ' + (settings.provider === 'gemini' ? 'Gemini' : 'OpenAI');
+    hint.textContent = 'พร้อมสแกนด้วย ' + getConfig().model;
   } else {
     $('home-guide-provider').value = settings.provider;
     renderApiGuide($('home-guide-content'), settings.provider);
@@ -1882,93 +2107,24 @@ function cleanAnswers(result) {
       box: normalizeBox(item.box) };
   });
 }
-function requestError(status, result) {
-  const error = result?.error;
-  if (error?.code === 'invalid_api_key' || error?.details?.some?.(detail => detail.reason === 'API_KEY_INVALID')) {
-    return 'API Key ใช้งานไม่ได้ ตรวจว่าคัดลอกรหัสครบและเลือกผู้ให้บริการถูกต้อง';
-  }
-  if (status === 401 || status === 403) return 'ผู้ให้บริการปฏิเสธรหัส API Key หรือสิทธิ์ใช้โมเดล';
-  if (error?.code === 'insufficient_quota') return 'โควตา API ไม่พอ ตรวจยอดใช้และการเรียกเก็บเงินในบัญชี';
-  if (status === 429) return 'ถึงขีดจำกัดการใช้งาน AI กรุณาลองอีกครั้งหรือตรวจโควตา';
-  if (status === 404) return 'บัญชีนี้เข้าถึงโมเดลที่เลือกไม่ได้ ตรวจสิทธิ์ของโปรเจกต์และคีย์';
-  if (status >= 500) return 'ผู้ให้บริการ AI ขัดข้องชั่วคราว กรุณาลองอีกครั้ง';
-  return 'ส่งคำขอ AI ไม่สำเร็จ (HTTP ' + status + ') ตรวจการตั้งค่ารหัสและสถานะบัญชี';
-}
-
-async function requestAI(config, body, controller = new AbortController(), timeoutMs = 115000) {
-  const headers = { 'Content-Type': 'application/json' };
-  const gemini = config.provider === 'gemini';
-  const url = gemini ? 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent' :
-    'https://api.openai.com/v1/chat/completions';
-  if (gemini) headers['x-goog-api-key'] = config.key;
-  else headers.Authorization = 'Bearer ' + config.key;
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
-    const result = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(requestError(response.status, result));
-    if (!result) throw new Error('ผู้ให้บริการส่งผลลัพธ์ในรูปแบบที่อ่านไม่ได้');
-    const candidate = gemini ? result.candidates?.[0] : result.choices?.[0];
-    const output = gemini ? candidate?.content?.parts?.filter(part => !part.thought).map(part => part.text || '').join('') :
-      candidate?.message?.content;
-    return { candidate, output };
-  } catch (error) {
-    if (controller.signal.aborted) throw new Error('รอคำตอบจาก AI นานเกินกำหนด กรุณาลองอีกครั้ง');
-    if (error instanceof TypeError) throw new Error('เชื่อมต่อ AI ไม่สำเร็จ ตรวจอินเทอร์เน็ตและลองเปิดแอปผ่าน HTTPS');
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function testAIConnection(config, controller) {
-  const prompt = 'Reply with OK.';
-  const body = config.provider === 'gemini' ? {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: 32, thinkingConfig: { thinkingBudget: 0 } }
-  } : {
-    model: 'gpt-4o-mini',
-    messages: [{ role: 'user', content: prompt }],
-    max_completion_tokens: 16
-  };
-  const { output } = await requestAI(config, body, controller, 25000);
-  if (typeof output !== 'string' || !output.trim()) throw new Error('เชื่อมต่อผู้ให้บริการได้ แต่โมเดลยังไม่ส่งข้อความตอบกลับ');
-}
-
-async function askAI(source, config, extra = '') {
-  const dataUrl = imageData(source);
-  let body;
-  if (config.provider === 'gemini') {
-    body = {
-      systemInstruction: { parts: [{ text: instructions }] },
-      contents: [{ role: 'user', parts: [{ text: extra || 'สแกนโจทย์ทุกข้อในภาพและส่งผลตามโครงสร้าง' },
-        { inlineData: { mimeType: 'image/jpeg', data: dataUrl.split(',')[1] } }] }],
-      generationConfig: { responseMimeType: 'application/json', responseJsonSchema: answerSchema, maxOutputTokens: 12000 }
-    };
-  } else {
-    body = {
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'system', content: instructions },
-        { role: 'user', content: [{ type: 'text', text: extra || 'สแกนโจทย์ทุกข้อในภาพและส่งผลตามโครงสร้าง' },
-          { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } }] }],
-      response_format: { type: 'json_schema', json_schema: { name: 'worksheet_answers', strict: true, schema: answerSchema } },
-      max_completion_tokens: 12000
-    };
-  }
-  const { candidate, output } = await requestAI(config, body);
+async function askAI(source, config, extra = '', onFallback) {
+  const prompt = extra || 'สแกนโจทย์ทุกข้อในภาพและส่งผลตามโครงสร้าง';
+  const body = WorksheetAI.worksheetBody(config.provider, imageData(source), instructions, prompt, answerSchema);
+  const { candidate, output, model } = await WorksheetAI.generate(config, body, { onFallback });
   if (candidate?.finishReason === 'MAX_TOKENS' || candidate?.finish_reason === 'length') {
     throw new Error('ผลลัพธ์ AI ยาวเกินกำหนด ลองนำเข้าภาพที่มีโจทย์น้อยลง');
   }
   if (!output) throw new Error('AI ไม่ส่งคำตอบกลับมา กรุณาตรวจความชัดของภาพ');
   try {
-    return cleanAnswers(JSON.parse(output));
+    return { answers: cleanAnswers(JSON.parse(output)), model };
   } catch (error) {
     if (error instanceof SyntaxError) throw new Error('AI ส่งผลลัพธ์ JSON ไม่สมบูรณ์ กรุณาลองอีกครั้ง');
     throw error;
   }
 }
 function getConfig() {
-  return { provider: settings.provider, key: settings.keys[settings.provider] };
+  const provider = settings.provider;
+  return { provider, key: settings.keys[provider], model: WorksheetAI.modelFor({ provider, model: settings.models[provider] }) };
 }
 async function scanWorksheet() {
   if (job || exporting || !activePage()) return;
@@ -1976,15 +2132,20 @@ async function scanWorksheet() {
   if (!config.key) { openSettings(); return; }
   setJob('scan', 'กำลังสแกนใบงาน…');
   const errors = [];
+  const fallbackModels = new Set();
   let total = 0;
   let succeeded = 0;
   try {
     for (const [index, page] of pages.entries()) {
-      setStatus('job-status', 'กำลังสแกนหน้า ' + (index + 1) + ' จาก ' + pages.length + '…');
+      const progress = 'กำลังสแกนหน้า ' + (index + 1) + ' จาก ' + pages.length;
+      setStatus('job-status', progress + ' ด้วย ' + config.model + '…');
       let source;
       try {
         source = page.source || await rasterPdfPage(page, 2100);
-        const answers = await askAI(source, config);
+        const { answers, model } = await askAI(source, config, '', change => {
+          setStatus('job-status', progress + ' · ' + fallbackMessage(change));
+        });
+        if (model !== config.model) fallbackModels.add(model);
         page.answers = [...answers, ...page.answers.filter(answer => answer.manual)];
         if (page === activePage()) {
           selected = answers[0]?.id || null;
@@ -1994,14 +2155,15 @@ async function scanWorksheet() {
         succeeded++;
       } catch (error) {
         errors.push('หน้า ' + (index + 1) + ' ' + error.message);
-        if (!succeeded && /API Key|โควตา|ขีดจำกัดการใช้งาน|เชื่อมต่อ AI|เข้าถึงโมเดล/.test(error.message)) break;
+        if (error.stopsScan) break;
       } finally {
         if (source && source !== page.source) source.width = source.height = 1;
       }
     }
   } finally {
     const summary = succeeded ? 'สแกนแล้ว ' + succeeded + '/' + pages.length + ' หน้า พบ ' + total + ' ข้อ' : 'สแกนใบงานไม่สำเร็จ';
-    setJob('', [summary, ...errors].join(' · '));
+    const modelStatus = fallbackModels.size ? 'ใช้โมเดลสำรอง ' + [...fallbackModels].join(', ') : '';
+    setJob('', [summary, modelStatus, ...errors].filter(Boolean).join(' · '));
     toast(errors.length && !succeeded ? errors[0] : summary, errors.length > 0);
   }
 }
@@ -2020,15 +2182,15 @@ $('retry-answer').addEventListener('click', async () => {
   for (const field of $('answer-form').elements) field.disabled = true;
   setStatus('answer-status', 'กำลังคิดคำตอบเฉพาะข้อนี้…');
   try {
-    const result = await askAI(activePage().source, config, 'วิเคราะห์ใหม่เฉพาะโจทย์เดียวแล้วส่ง 1 รายการเท่านั้น ข้อ ' +
+    const { answers, model } = await askAI(activePage().source, config, 'วิเคราะห์ใหม่เฉพาะโจทย์เดียวแล้วส่ง 1 รายการเท่านั้น ข้อ ' +
       (old.number || '') + '\nโจทย์: ' + (edited.question || old.question) +
-      '\nคำตอบเดิม: ' + edited.answer + '\nกรอบเดิม: ' + JSON.stringify(old.box));
-    if (result.length !== 1) throw new Error('AI ยังระบุโจทย์ข้อนี้ไม่ได้ ลองระบุข้อความโจทย์ให้ครบ');
-    const first = result[0];
+      '\nคำตอบเดิม: ' + edited.answer + '\nกรอบเดิม: ' + JSON.stringify(old.box), change => setStatus('answer-status', fallbackMessage(change)));
+    if (answers.length !== 1) throw new Error('AI ยังระบุโจทย์ข้อนี้ไม่ได้ ลองระบุข้อความโจทย์ให้ครบ');
+    const first = answers[0];
     const updated = { ...edited, question: edited.question || first.question, type: first.type,
       answer: first.answer, explanation: first.explanation, box: first.type === 'choice' ? first.box : edited.box };
     fillAnswerForm(updated);
-    setStatus('answer-status', 'ได้คำตอบใหม่แล้ว ตรวจแล้วกดบันทึกคำตอบ');
+    setStatus('answer-status', 'ได้คำตอบใหม่จาก ' + model + ' แล้ว ตรวจแล้วกดบันทึกคำตอบ');
   } catch (error) {
     setStatus('answer-status', error.message);
   } finally {
